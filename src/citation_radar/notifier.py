@@ -7,6 +7,10 @@ import httpx
 from .models import Citation, Work
 
 
+class NotificationError(RuntimeError):
+    pass
+
+
 class TelegramNotifier:
     def __init__(self, bot_token: str, chat_id: str, timeout: float = 20.0):
         self.bot_token = bot_token
@@ -15,17 +19,31 @@ class TelegramNotifier:
 
     def send_new_citation(self, source: Work, citation: Citation) -> None:
         text = self._format_message(source, citation)
-        response = httpx.post(
-            f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
-            json={
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        try:
+            response = httpx.post(
+                f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
+                json={
+                    "chat_id": self.chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise NotificationError("Telegram request failed.") from exc
+
+        if response.status_code >= 400:
+            raise NotificationError(f"Telegram request failed with HTTP {response.status_code}.")
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise NotificationError("Telegram returned invalid JSON.") from exc
+
+        if not payload.get("ok", False):
+            description = payload.get("description") or "Unknown Telegram error."
+            raise NotificationError(f"Telegram API error: {description}")
 
     @staticmethod
     def _format_message(source: Work, citation: Citation) -> str:

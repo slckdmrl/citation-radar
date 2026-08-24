@@ -13,9 +13,17 @@ def _short_id(value: str) -> str:
     return value.rsplit("/", 1)[-1]
 
 
+class OpenAlexError(RuntimeError):
+    pass
+
+
 class OpenAlexClient:
-    def __init__(self, email: str | None = None, timeout: float = 30.0):
-        self.params = {"mailto": email} if email else {}
+    def __init__(self, email: str | None = None, api_key: str | None = None, timeout: float = 30.0):
+        self.params: dict[str, str] = {}
+        if api_key:
+            self.params["api_key"] = api_key
+        if email:
+            self.params["mailto"] = email
         self.client = httpx.Client(timeout=timeout, headers={"User-Agent": "citation-radar/0.1"})
 
     def close(self) -> None:
@@ -25,12 +33,19 @@ class OpenAlexClient:
         merged = dict(self.params)
         if params:
             merged.update(params)
-        response = self.client.get(f"{BASE_URL}{path}", params=merged)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = self.client.get(f"{BASE_URL}{path}", params=merged)
+        except httpx.HTTPError as exc:
+            raise OpenAlexError(f"OpenAlex request failed for {path}.") from exc
+        if response.status_code >= 400:
+            raise OpenAlexError(f"OpenAlex returned HTTP {response.status_code} for {path}.")
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise OpenAlexError(f"OpenAlex returned invalid JSON for {path}.") from exc
 
     def search_authors(self, name: str, per_page: int = 10) -> list[dict]:
-        data = self._get("/authors", {"search": name, "per-page": per_page})
+        data = self._get("/authors", {"search": name, "per_page": per_page})
         return data.get("results", [])
 
     def iter_author_works(self, author_id: str) -> Iterable[Work]:
@@ -41,7 +56,7 @@ class OpenAlexClient:
                 "/works",
                 {
                     "filter": f"authorships.author.id:{author_id}",
-                    "per-page": 200,
+                    "per_page": 200,
                     "cursor": cursor,
                     "select": "id,title,doi,publication_year,primary_location",
                 },
@@ -64,7 +79,7 @@ class OpenAlexClient:
                 "/works",
                 {
                     "filter": f"cites:{_short_id(work.id)}",
-                    "per-page": 200,
+                    "per_page": 200,
                     "cursor": cursor,
                     "select": "id,title,doi,publication_year,primary_location",
                 },

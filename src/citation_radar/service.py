@@ -35,10 +35,12 @@ def check_citations(
     for work in works:
         for citation in client.iter_citations(work):
             seen += 1
-            if db.add_citation_if_new(citation):
+            record = db.record_citation(citation, baseline=baseline)
+            if record.is_new_global:
                 new += 1
-                if not baseline and notifier is not None:
-                    notifier.send_new_citation(work, citation)
-                    sent += 1
+            if not baseline and notifier is not None and record.needs_notification:
+                notifier.send_new_citation(work, citation)
+                db.mark_citing_work_notified(citation.citing_work_id)
+                sent += 1
 
     return CheckResult(len(works), seen, new, sent)

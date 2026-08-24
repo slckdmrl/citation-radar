@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 
 from .config import load_settings
 from .db import Database
-from .notifier import TelegramNotifier
-from .openalex import OpenAlexClient
+from .notifier import NotificationError, TelegramNotifier
+from .openalex import OpenAlexClient, OpenAlexError
 from .service import check_citations, sync_author_works
 
 
@@ -28,50 +29,54 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     settings = load_settings()
-    client = OpenAlexClient(settings.openalex_email)
+    client = OpenAlexClient(settings.openalex_email, settings.openalex_api_key)
 
     try:
-        if args.command == "discover-author":
-            for item in client.search_authors(args.name):
-                author_id = item.get("id", "").rsplit("/", 1)[-1]
-                name = item.get("display_name", "?")
-                works = item.get("works_count", 0)
-                cited = item.get("cited_by_count", 0)
-                inst = ((item.get("last_known_institutions") or [{}])[0]).get("display_name", "")
-                print(f"{author_id}\t{name}\tworks={works}\tcitations={cited}\t{inst}")
-            return 0
-
-        db = Database(settings.database_path)
         try:
-            if args.command == "sync-author":
-                author_id = args.author_id or settings.openalex_author_id
-                if not author_id:
-                    print("OPENALEX_AUTHOR_ID is missing. Use discover-author first.", file=sys.stderr)
-                    return 2
-                count = sync_author_works(db, client, author_id)
-                print(f"Synced {count} works for {author_id}.")
+            if args.command == "discover-author":
+                for item in client.search_authors(args.name):
+                    author_id = item.get("id", "").rsplit("/", 1)[-1]
+                    name = item.get("display_name", "?")
+                    works = item.get("works_count", 0)
+                    cited = item.get("cited_by_count", 0)
+                    inst = ((item.get("last_known_institutions") or [{}])[0]).get("display_name", "")
+                    print(f"{author_id}\t{name}\tworks={works}\tcitations={cited}\t{inst}")
                 return 0
 
-            if args.command == "check":
-                author_id = settings.openalex_author_id
-                if author_id:
-                    sync_author_works(db, client, author_id)
-
-                notifier = None
-                if not args.baseline:
-                    if not settings.telegram_bot_token or not settings.telegram_chat_id:
-                        print("Telegram credentials missing. Use --baseline or configure Telegram.", file=sys.stderr)
+            db = Database(settings.database_path)
+            try:
+                if args.command == "sync-author":
+                    author_id = args.author_id or settings.openalex_author_id
+                    if not author_id:
+                        print("OPENALEX_AUTHOR_ID is missing. Use discover-author first.", file=sys.stderr)
                         return 2
-                    notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+                    count = sync_author_works(db, client, author_id)
+                    print(f"Synced {count} works for {author_id}.")
+                    return 0
 
-                result = check_citations(db, client, notifier, baseline=args.baseline)
-                print(
-                    f"Checked {result.works_checked} works; saw {result.citations_seen} citations; "
-                    f"new={result.new_citations}; notified={result.notifications_sent}."
-                )
-                return 0
-        finally:
-            db.close()
+                if args.command == "check":
+                    author_id = settings.openalex_author_id
+                    if author_id:
+                        sync_author_works(db, client, author_id)
+
+                    notifier = None
+                    if not args.baseline:
+                        if not settings.telegram_bot_token or not settings.telegram_chat_id:
+                            print("Telegram credentials missing. Use --baseline or configure Telegram.", file=sys.stderr)
+                            return 2
+                        notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+
+                    result = check_citations(db, client, notifier, baseline=args.baseline)
+                    print(
+                        f"Checked {result.works_checked} works; saw {result.citations_seen} citations; "
+                        f"new={result.new_citations}; notified={result.notifications_sent}."
+                    )
+                    return 0
+            finally:
+                db.close()
+        except (NotificationError, OpenAlexError, sqlite3.Error) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
     finally:
         client.close()
 
