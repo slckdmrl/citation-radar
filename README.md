@@ -37,3 +37,4 @@ Create a bot with BotFather, obtain the bot token, send your bot one message, th
 ## Design notes
 
 Google Scholar and ResearchGate are intentionally not scraped in v0.1. Their pages are brittle for automation and may trigger anti-bot controls. OpenAlex is the primary structured citation source. Semantic Scholar can be added as a second source in v0.2.
+# citation-radar
