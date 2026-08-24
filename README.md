@@ -50,6 +50,36 @@ If you do not want to edit `.env` yet, you can also import works once with:
 citation-radar sync-author --author-id A1234567890
 ```
 
+## Run on GitHub Actions
+
+If you want citation checks to continue while your computer is off, use the included GitHub Actions workflow in `.github/workflows/citation-radar.yml`.
+
+What it does:
+
+- Runs automatically every 6 hours.
+- Supports manual runs from the Actions tab.
+- Automatically uses `--baseline` on the first remote run when no saved SQLite database exists yet.
+- Saves `citation_radar.db` to a dedicated `citation-radar-state` branch so deduplication and notification history survive between runs.
+
+Repository setup:
+
+1. Push this repository to GitHub.
+2. In GitHub, open `Settings -> Secrets and variables -> Actions`.
+3. Add these repository secrets:
+   - `OPENALEX_AUTHOR_ID`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+   - `OPENALEX_EMAIL` (optional)
+   - `OPENALEX_API_KEY` (optional, recommended if you have one)
+4. Open the `Actions` tab and run the `Citation Radar` workflow once.
+5. For the first manual run, set the `baseline` input to `true` if you want to force a fresh baseline.
+
+Notes:
+
+- The workflow persists state in a separate Git branch named `citation-radar-state`. It will create that branch automatically on the first successful run.
+- If you ever want to reset the remote baseline, either delete the `citation-radar-state` branch or manually run the workflow with `baseline=true`.
+- GitHub Actions uses repository secrets, not your local `.env` file.
+
 ## Telegram setup
 
 Create a bot with BotFather, obtain the bot token, send your bot one message, then use the target chat ID as `TELEGRAM_CHAT_ID`.

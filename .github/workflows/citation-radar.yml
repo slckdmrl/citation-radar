@@ -1,0 +1,100 @@
+name: Citation Radar
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Store current citations without sending notifications
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: citation-radar-monitor
+  cancel-in-progress: false
+
+jobs:
+  check-citations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_PATH: ./citation_radar.db
+      OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+      OPENALEX_AUTHOR_ID: ${{ secrets.OPENALEX_AUTHOR_ID }}
+      OPENALEX_EMAIL: ${{ secrets.OPENALEX_EMAIL }}
+      STATE_BRANCH: citation-radar-state
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate required configuration
+        run: |
+          set -euo pipefail
+          missing=0
+          for variable in OPENALEX_AUTHOR_ID TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            if [ -z "${!variable:-}" ]; then
+              echo "::error::Missing required repository secret: $variable"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Restore SQLite state
+        id: restore_state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          bash scripts/github_state_branch.sh restore "$DATABASE_PATH"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "state_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "state_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run citation check
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.baseline }}" = "true" ]; then
+            echo "Manual baseline requested."
+            citation-radar check --baseline
+          elif [ "${{ steps.restore_state.outputs.state_exists }}" != "true" ]; then
+            echo "No saved database found; creating a baseline run."
+            citation-radar check --baseline
+          else
+            citation-radar check
+          fi
+
+      - name: Persist SQLite state
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -f "$DATABASE_PATH" ]; then
+            bash scripts/github_state_branch.sh save "$DATABASE_PATH"
+          else
+            echo "No database file produced; skipping state save."
+          fi
