@@ -48,6 +48,13 @@ class OpenAlexClient:
         data = self._get("/authors", {"search": name, "per_page": per_page})
         return data.get("results", [])
 
+    def citation_total(self, entity: str, entity_id: str) -> int | None:
+        if entity not in {"authors", "works"}:
+            raise ValueError("Unsupported OpenAlex entity")
+        data = self._get(f"/{entity}/{_short_id(entity_id)}", {"select": "cited_by_count"})
+        value = data.get("cited_by_count")
+        return value if type(value) is int and value >= 0 else None
+
     def iter_author_works(self, author_id: str) -> Iterable[Work]:
         cursor = "*"
         author_id = _short_id(author_id)

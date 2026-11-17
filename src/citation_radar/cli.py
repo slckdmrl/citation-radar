@@ -4,7 +4,7 @@ import argparse
 import sqlite3
 import sys
 
-from .config import load_settings
+from .config import ConfigError, load_settings
 from .db import Database
 from .notifier import NotificationError, TelegramNotifier
 from .openalex import OpenAlexClient, OpenAlexError
@@ -64,7 +64,15 @@ def main(argv: list[str] | None = None) -> int:
                         if not settings.telegram_bot_token or not settings.telegram_chat_id:
                             print("Telegram credentials missing. Use --baseline or configure Telegram.", file=sys.stderr)
                             return 2
-                        notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+                        notifier = TelegramNotifier(
+                            settings.telegram_bot_token,
+                            settings.telegram_chat_id,
+                            compare_sources=settings.notification_compare_sources,
+                            google_scholar_profile_url=settings.google_scholar_profile_url,
+                            researchgate_profile_url=settings.researchgate_profile_url,
+                            totals_client=client,
+                            author_id=author_id,
+                        )
 
                     result = check_citations(db, client, notifier, baseline=args.baseline)
                     print(
@@ -74,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
             finally:
                 db.close()
-        except (NotificationError, OpenAlexError, sqlite3.Error) as exc:
+        except (ConfigError, NotificationError, OpenAlexError, sqlite3.Error) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     finally:

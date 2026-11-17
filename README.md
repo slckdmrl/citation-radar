@@ -9,6 +9,7 @@ Citation Radar watches an author's works in OpenAlex, stores known citing works 
 - Fetch citing works for each tracked work
 - SQLite baseline + deduplication
 - Telegram notifications for newly discovered citations
+- Alerts include the work and configured author's current OpenAlex citation totals when available. Totals are fetched once per entity per run, only when an alert is sent. An unavailable total is omitted without blocking delivery; these totals may differ from other citation indexes.
 - Safe first run: existing citations are stored but not notified
 
 ## Setup
@@ -28,6 +29,8 @@ Then edit `.env`:
 - Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
 - Leave `OPENALEX_AUTHOR_ID` empty until you discover the correct author.
 - `DATABASE_PATH=./citation_radar.db` is resolved relative to the `.env` file, so the same database is used even if you run commands from another working directory.
+- Optional: set `NOTIFICATION_COMPARE_SOURCES=google-scholar,researchgate` to add manual comparison links into Telegram notifications.
+- Optional: set `GOOGLE_SCHOLAR_PROFILE_URL` and `RESEARCHGATE_PROFILE_URL` if you want those profile links included in notifications.
 
 Discover the author first:
 
@@ -86,4 +89,14 @@ Create a bot with BotFather, obtain the bot token, send your bot one message, th
 
 ## Design notes
 
-Google Scholar and ResearchGate are intentionally not scraped in v0.1. Their pages are brittle for automation and may trigger anti-bot controls. OpenAlex is the primary structured citation source. Semantic Scholar can be added as a second source in v0.2.
+Google Scholar and ResearchGate are intentionally not scraped in v0.1. Their pages are brittle for automation and may trigger anti-bot controls. OpenAlex remains the primary structured citation source.
+
+If you still want those services involved in your workflow, v0.1 now supports manual comparison links inside Telegram notifications. Example:
+
+```env
+NOTIFICATION_COMPARE_SOURCES=google-scholar,researchgate
+GOOGLE_SCHOLAR_PROFILE_URL=https://scholar.google.com/citations?user=YOUR_PROFILE_ID
+RESEARCHGATE_PROFILE_URL=https://www.researchgate.net/profile/Your-Profile
+```
+
+When configured, each Telegram alert includes direct profile links so you can quickly compare the new OpenAlex-detected citation against your Google Scholar and ResearchGate pages without automated scraping.
